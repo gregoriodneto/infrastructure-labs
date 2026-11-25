@@ -14,12 +14,40 @@ pool.on('error', (err) => {
 
 fastify.get('/health', async () => ({ status: 'ok' }));
 
-fastify.get('/inventory/1', async (request, reply) => {
+const inventoryRouteOptions = {
+  schema: {
+    params: {
+      type: 'object',
+      required: ['id'],
+      properties: {
+        id: { type: 'string', pattern: '^0*[1-9][0-9]*$' },
+      },
+    },
+  },
+  attachValidation: true,
+};
+
+fastify.get('/inventory/:id', inventoryRouteOptions, async (request, reply) => {
+  if (request.validationError) {
+    request.log.warn(
+      { err: request.validationError, databaseHost: process.env.PGHOST },
+      'Invalid parameter',
+    );
+    return reply.code(400).send({ error: 'Invalid parameter' });
+  }
+
+  const { id } = request.params;
+  const productId = BigInt(id);
+  // IDs above the PostgreSQL integer range cannot match a product.
+  if (productId > 2147483647n) {
+    return reply.code(404).send({ error: 'Product not found' });
+  }
+
   let result;
   try {
     result = await pool.query(
       'SELECT product_id, quantity FROM inventory WHERE product_id = $1',
-      [1],
+      [Number(productId)],
     );
   } catch (err) {
     request.log.warn({ err, databaseHost: process.env.PGHOST }, 'Inventory query failed');

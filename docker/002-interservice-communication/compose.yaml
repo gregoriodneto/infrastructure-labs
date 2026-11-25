@@ -1,25 +1,31 @@
 services:
   order:
     build: ./order
+    env_file:
+      - .env
     environment:
-      INVENTORY_URL: http://inventory:3000
-      INVENTORY_TIMEOUT_SECONDS: "4"
+      INVENTORY_URL: ${INVENTORY_URL}
+      INVENTORY_TIMEOUT_SECONDS: ${INVENTORY_TIMEOUT_SECONDS}
     ports:
       - "127.0.0.1:8080:8000"
     networks:
       - frontend
+      - services
 
   inventory:
     build: ./inventory
+    env_file:
+      - .env
     environment:
-      PGHOST: postgres
-      PGPORT: "5432"
-      PGUSER: inventory
-      PGPASSWORD: inventory_lab
-      PGDATABASE: inventory
-      PG_TIMEOUT_MS: "1500"
+      PGHOST: ${PGHOST}
+      PGPORT: ${PGPORT}
+      PGUSER: ${PGUSER}
+      PGPASSWORD: ${PGPASSWORD}
+      PGDATABASE: ${PGDATABASE}
+      PG_TIMEOUT_MS: ${PG_TIMEOUT_MS}
     networks:
       - services
+      - data
 
   postgres:
     build: ./database
