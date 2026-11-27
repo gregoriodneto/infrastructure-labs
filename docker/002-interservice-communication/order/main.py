@@ -1,11 +1,15 @@
 import asyncio
 import logging
 import os
+import socket
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from time import perf_counter
 from typing import Annotated
 
 import httpx
-from fastapi import FastAPI, HTTPException, Path, Request
+from fastapi import FastAPI, HTTPException, Path, Query, Request
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, ValidationError
 
 logger = logging.getLogger("uvicorn.error")
@@ -23,15 +27,60 @@ async def lifespan(app: FastAPI):
     async with httpx.AsyncClient(base_url=url, timeout=timeout, trust_env=False) as client:
         app.state.inventory = client
         app.state.inventory_timeout = timeout
+        app.state.hostname = socket.gethostname()
+        app.state.started_at = datetime.now(timezone.utc)
         yield
 
 
 app = FastAPI(lifespan=lifespan)
 
 
+@app.middleware("http")
+async def identify_instance(request: Request, call_next):
+    hostname = request.app.state.hostname
+    started = perf_counter()
+    try:
+        response = await call_next(request)
+        response.headers["X-Instance-ID"] = hostname
+        return response
+    finally:
+        logger.info(
+            "Request hostname=%s method=%s path=%s duration_ms=%.2f",
+            hostname,
+            request.method,
+            request.url.path,
+            (perf_counter() - started) * 1000,
+        )
+
+
+@app.exception_handler(500)
+async def internal_server_error(request: Request, _error: Exception):
+    return PlainTextResponse(
+        "Internal Server Error",
+        status_code=500,
+        headers={"X-Instance-ID": request.app.state.hostname},
+    )
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/instance")
+async def instance(request: Request):
+    return {
+        "hostname": request.app.state.hostname,
+        "pid": os.getpid(),
+        "started_at": request.app.state.started_at,
+    }
+
+
+@app.get("/work")
+async def work(delay_ms: Annotated[int, Query(ge=0, le=5000)] = 100):
+    await asyncio.sleep(delay_ms / 1000)
+    return {"delay_ms": delay_ms}
+
 
 @app.get("/orders/{order_id}")
 async def order(
