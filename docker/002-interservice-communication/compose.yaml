@@ -6,11 +6,17 @@ services:
     environment:
       INVENTORY_URL: ${INVENTORY_URL}
       INVENTORY_TIMEOUT_SECONDS: ${INVENTORY_TIMEOUT_SECONDS}
-    ports:
-      - "127.0.0.1:8080:8000"
+    expose:
+      - "8000"
     networks:
       - frontend
       - services
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
 
   inventory:
     build: ./inventory
@@ -42,6 +48,18 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./infrastructure/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - frontend
+    depends_on:
+      order:
+        condition: service_healthy
 
 networks:
   frontend:
